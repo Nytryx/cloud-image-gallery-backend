@@ -1,0 +1,42 @@
+server:
+  port: 8080
+  servlet:
+    # Web 应用的上下文路径，即整个 Web 应用的访问前缀路径（应用根路径）
+    context-path: /api
+spring:
+  application:
+    name: cloud-image-gallery-backend
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/cloud_image_gallery
+    username: root
+    password: root
+mybatis-plus:
+  configuration:
+    # MyBatis 下划线自动转驼峰配置
+    map-underscore-to-camel-case: true
+    # 在开发环境中，打印sql日志（具体执行了什么sql）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 配置数据库中的逻辑删除字段名为：is_delete
+      logic-delete-field: is_delete
+      # 配置逻辑删除字段值：1
+      logic-delete-value: 1
+      # 配置未逻辑删除字段值：0
+      logic-not-delete-value: 0
+# 接口文档配置
+knife4j:
+  enable: true
+  openapi:
+    # 接口文档标题
+    title: 云图库接口文档
+    # 接口文档版本号
+    version: 1.0
+    # 定义接口分组（指定knife4j需要找到代码中的哪些接口并识别出来）
+    group:
+      default:
+        group-name: 默认分组
+        api-rule: package
+        api-rule-resources:
+          - com.nytryx.gallery.controller
