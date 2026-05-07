@@ -41,7 +41,7 @@ public class Result<T> implements Serializable {
      * @return 响应
      */
     public static <T> Result<T> success(T data) {
-        return new Result<>(0, data, "ok");
+        return new Result<>(0, data, "success");
     }
 
     /**

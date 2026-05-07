@@ -20,7 +20,7 @@ mybatis-plus:
   global-config:
     db-config:
       # 配置数据库中的逻辑删除字段名为：is_delete
-      logic-delete-field: is_delete
+      logic-delete-field: isDelete
       # 配置逻辑删除字段值：1
       logic-delete-value: 1
       # 配置未逻辑删除字段值：0
