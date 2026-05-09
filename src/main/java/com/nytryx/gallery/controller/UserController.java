@@ -19,6 +19,10 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 
+/**
+ * 用户接口
+ * @author zhent
+ */
 @RestController
 @RequestMapping("/user")
 public class UserController {

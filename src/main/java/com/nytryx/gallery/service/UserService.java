@@ -13,8 +13,8 @@ import java.util.List;
 
 /**
  * 用户服务接口
-* @author zhent
-*/
+ * @author zhent
+ */
 public interface UserService extends IService<User> {
 
     /**
@@ -53,7 +53,6 @@ public interface UserService extends IService<User> {
 
     /**
      * 获得脱敏后的登录用户信息
-     *
      * @param user 数据库查询得到的用户完整信息
      * @return 脱敏后的用户登录信息
      */
@@ -61,7 +60,6 @@ public interface UserService extends IService<User> {
 
     /**
      * 获取脱敏后的用户信息
-     *
      * @param user 数据库查询得到的用户完整信息
      * @return 脱敏后的用户信息
      */
@@ -69,7 +67,6 @@ public interface UserService extends IService<User> {
 
     /**
      * 获取脱敏后的用户信息列表
-     *
      * @param userList 数据库查询得到的用户完整信息列表
      * @return 脱敏后的用户信息列表
      */
@@ -84,9 +81,16 @@ public interface UserService extends IService<User> {
 
     /**
      * 获取MyBatis-Plus查询包装器
-     *
      * @param userQueryDTO 用户查询请求对象
      * @return MyBatis Plus查询包装器
      */
     QueryWrapper<User> getQueryWrapper(UserQueryDTO userQueryDTO);
+
+    /**
+     * 判断用户是否为管理员
+     *
+     * @param user 用户
+     * @return 是或不是
+     */
+    boolean isAdmin(User user);
 }
