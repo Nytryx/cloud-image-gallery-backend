@@ -1,16 +1,22 @@
 package com.nytryx.gallery.controller;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.nytryx.gallery.annotation.AuthCheck;
 import com.nytryx.gallery.common.DeleteRequest;
 import com.nytryx.gallery.common.Result;
 import com.nytryx.gallery.constant.UserConstant;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
+import com.nytryx.gallery.model.dto.picture.ImageEditDTO;
+import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUpdateDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
 import com.nytryx.gallery.model.entity.Image;
 import com.nytryx.gallery.model.entity.User;
 import com.nytryx.gallery.model.enums.UserRoleEnum;
+import com.nytryx.gallery.model.vo.ImageTagCategory;
 import com.nytryx.gallery.model.vo.ImageVO;
 import com.nytryx.gallery.service.ImageService;
 import com.nytryx.gallery.service.UserService;
@@ -19,6 +25,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
 
 /**
  * 图片接口
@@ -60,17 +69,138 @@ public class ImageController {
      */
     @PostMapping("/delete")
     public Result<Boolean> deleteImage(@RequestBody DeleteRequest deleteRequest, HttpServletRequest request) {
-        ThrowUtils.throwIf(deleteRequest == null || deleteRequest.getId() <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(deleteRequest.getId() == null || deleteRequest.getId() <= 0, ErrorCode.PARAMS_ERROR);
         // 验证图片是否为当前登录用户所创建
         User loginUser = userService.getLoginUser(request);
         Image image = imageService.getById(deleteRequest.getId());
         ThrowUtils.throwIf(image == null, ErrorCode.NOT_FOUND_ERROR);
         // 如果当前登录用户不是管理员，且不是图片差创建者，则无法删除该图片
         ThrowUtils.throwIf(!loginUser.getId().equals(image.getUserId()) &&
-                UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole()),
+                !UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole()),
                 ErrorCode.NO_AUTH_ERROR);
         boolean result = imageService.removeById(deleteRequest);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片删除失败");
         return Result.success(true);
+    }
+
+    /**
+     * 图片更新（管理员）
+     * 需要注意 Image 和 ImageUpdateDTO的tags字段存在类型差异，BeanUtil无法处理，需要手动操作
+     * @param imageUpdateDTO 图片更新DTO
+     * @return 图片更新是否成功
+     */
+    @PostMapping("/update")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<Boolean> updateImage(@RequestBody ImageUpdateDTO imageUpdateDTO) {
+        ThrowUtils.throwIf(imageUpdateDTO.getId() == null ||imageUpdateDTO.getId() <= 0, ErrorCode.PARAMS_ERROR);
+        Image image = new Image();
+        BeanUtil.copyProperties(imageUpdateDTO, image);
+        image.setTags(JSONUtil.toJsonStr(imageUpdateDTO.getTags()));
+        // 进行图片数据校验
+        imageService.validImage(image);
+        // 判断需要更新的数据是否存在
+        long imageId = imageUpdateDTO.getId();
+        Image imageToUpdate = imageService.getById(imageId);
+        ThrowUtils.throwIf(imageToUpdate == null, ErrorCode.NOT_FOUND_ERROR);
+        // 操作数据库
+        boolean result = imageService.updateById(image);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return Result.success(true);
+    }
+
+    /**
+     * 根据id获取图片（管理员）
+     * @param id 图片id
+     * @return 图片PO
+     */
+    @GetMapping("/get")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<Image> getById(long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        Image image = imageService.getById(id);
+        ThrowUtils.throwIf(image == null, ErrorCode.NOT_FOUND_ERROR);
+        return Result.success(image);
+    }
+
+    /**
+     * 根据id获取图片
+     * @param id 图片id
+     * @return 图片VO
+     */
+    @GetMapping("/get/vo")
+    public Result<ImageVO> getVOById(long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        Image image = imageService.getById(id);
+        ThrowUtils.throwIf(image == null, ErrorCode.NOT_FOUND_ERROR);
+        return Result.success(imageService.getImageVO(image));
+    }
+
+    /**
+     * 分页获取图片（管理员）
+     * @param imageQueryDTO 图片查询DTO
+     * @return 图片PO分页
+     */
+    @PostMapping("/list/page")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<Page<Image>> listImageByPage(@RequestBody ImageQueryDTO imageQueryDTO) {
+        int current = imageQueryDTO.getCurrent();
+        int pageSize = imageQueryDTO.getPageSize();
+        // 查询数据库
+        return Result.success(imageService.page(new Page<>(current, pageSize), imageService.getQueryWrapper(imageQueryDTO)));
+    }
+
+    /**
+     * 分页获取图片
+     * @param imageQueryDTO 图片查询DTO
+     * @return 图片VO分页
+     */
+    @PostMapping("/list/page/vo")
+    public Result<Page<ImageVO>> listImageVOByPage(@RequestBody ImageQueryDTO imageQueryDTO) {
+        int current = imageQueryDTO.getCurrent();
+        int pageSize = imageQueryDTO.getPageSize();
+        // 查询数据库
+        Page<Image> page = imageService.page(new Page<>(current, pageSize), imageService.getQueryWrapper(imageQueryDTO));
+        return Result.success(imageService.getImageVOPage(page));
+    }
+
+    /**
+     * 编辑图片
+     * @param imageEditDTO 编辑图片DTO
+     * @param request Http请求对象
+     * @return 是否成功
+     */
+    @PostMapping("/edit")
+    public Result<Boolean> editImage(@RequestBody ImageEditDTO imageEditDTO, HttpServletRequest request) {
+        ThrowUtils.throwIf(imageEditDTO.getId() == null || imageEditDTO.getId() <= 0, ErrorCode.PARAMS_ERROR);
+        Image image = new Image();
+        BeanUtil.copyProperties(imageEditDTO, image);
+        // tags字段类型不同，需要手动更新
+        image.setTags(JSONUtil.toJsonStr(imageEditDTO.getTags()));
+        // 判断更新目标是否存在
+        Image imageToEdit = imageService.getById(imageEditDTO.getId());
+        ThrowUtils.throwIf(imageToEdit == null, ErrorCode.NOT_FOUND_ERROR);
+        // 仅本人和管理员可编辑
+        User loginUser = userService.getLoginUser(request);
+        boolean canEdit = loginUser.getId().equals(imageToEdit.getUserId())
+                || UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(!canEdit, ErrorCode.NO_AUTH_ERROR);
+        // 操作数据库
+        boolean result = imageService.updateById(image);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return Result.success(true);
+    }
+
+    /**
+     * 获取图片标签分类
+     * @return 图片标签视图
+     */
+    @GetMapping("/tag_category")
+    public Result<ImageTagCategory> listImageTagCategory() {
+        ImageTagCategory imageTagCategory = new ImageTagCategory();
+        List<String> tagList = Arrays.asList("热面", "搞笑", "生活", "高清", "艺术", "校园", "背景", "简历", "创意");
+        List<String> categoryList = Arrays.asList("模版", "电商", "表情包", "素材", "海报");
+        imageTagCategory.setTagList(tagList);
+        imageTagCategory.setCategoryList(categoryList);
+        return Result.success(imageTagCategory);
     }
 }

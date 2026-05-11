@@ -1,11 +1,14 @@
 package com.nytryx.gallery.model.dto.picture;
 
+import lombok.Data;
+
 import java.io.Serializable;
 import java.util.List;
 
 /**
  * 图片编辑DTO
  */
+@Data
 public class ImageEditDTO implements Serializable {
     private static final long serialVersionUID = 8428044722088868764L;
 

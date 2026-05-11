@@ -56,9 +56,10 @@ public class FileManager {
             // 通过InputStream上传文件
             InputStream inputStream = multipartFile.getInputStream();
             ossManager.upload(uploadFilePath, inputStream);
-            String url = "https://" + ossClientConfig.getBucket() + "." + ossClientConfig.getEndpoint() + "/" + uploadFilePath + OSS_GET_INFO_SIGN;
+            String url = "https://" + ossClientConfig.getBucket() + "." + ossClientConfig.getEndpoint() + "/" + uploadFilePath;
+            String imageImfoUrl = url + OSS_GET_INFO_SIGN;
             // 通过分析OSS返回的信息
-            String jsonResponse = HttpUtil.get(url);
+            String jsonResponse = HttpUtil.get(imageImfoUrl);
             JSONObject imageInfo = new JSONObject(jsonResponse);
             int imageWidth = imageInfo.getJSONObject(OSS_IMAGE_INFO_WIDTH).getInt(OSS_IMAGE_INFO_OBJ_KEY);
             int imageHeight = imageInfo.getJSONObject(OSS_IMAGE_INFO_HEIGHT).getInt(OSS_IMAGE_INFO_OBJ_KEY);
@@ -91,7 +92,7 @@ public class FileManager {
         ThrowUtils.throwIf(multipartFile == null, ErrorCode.PARAMS_ERROR, "文件不能为空");
         // 1.校验文件大小
         long fileSize = multipartFile.getSize();
-        ThrowUtils.throwIf(fileSize > 2 * ONE_M, ErrorCode.PARAMS_ERROR, "文件大小不能超过 2MB");
+        ThrowUtils.throwIf(fileSize > 20 * ONE_M, ErrorCode.PARAMS_ERROR, "文件大小不能超过 20MB");
         // 2.校验文件后缀
         String fileSuffix = FileUtil.getSuffix(multipartFile.getOriginalFilename());
         ThrowUtils.throwIf(!ALLOW_FORMAT_LIST.contains(fileSuffix), ErrorCode.PARAMS_ERROR, "文件类型不支持");
