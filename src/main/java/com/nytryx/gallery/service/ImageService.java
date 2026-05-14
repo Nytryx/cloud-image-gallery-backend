@@ -3,6 +3,7 @@ package com.nytryx.gallery.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
+import com.nytryx.gallery.model.dto.picture.ImageReviewDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
 import com.nytryx.gallery.model.entity.Image;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -54,5 +55,17 @@ public interface ImageService extends IService<Image> {
      */
     QueryWrapper<Image> getQueryWrapper(ImageQueryDTO imageQueryDTO);
 
+    /**
+     * 图片审核
+     * @param imageReviewDTO 图片审核DTO
+     * @param loginUser 审核用户
+     */
+    void doImageReview(ImageReviewDTO imageReviewDTO, User loginUser);
 
+    /**
+     * 填充审核参数
+     * @param image 图片对象
+     * @param loginuser 登录用户
+     */
+    void setImageReviewPass(Image image, User loginuser);
 }

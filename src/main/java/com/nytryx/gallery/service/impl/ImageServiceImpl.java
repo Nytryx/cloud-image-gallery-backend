@@ -1,19 +1,23 @@
 package com.nytryx.gallery.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.nytryx.gallery.execption.BusinessExecption;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
 import com.nytryx.gallery.manager.FileManager;
 import com.nytryx.gallery.model.dto.file.ImageUploadResult;
 import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
+import com.nytryx.gallery.model.dto.picture.ImageReviewDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
 import com.nytryx.gallery.model.entity.Image;
 import com.nytryx.gallery.model.entity.User;
+import com.nytryx.gallery.model.enums.ImageReviewStatusEnum;
 import com.nytryx.gallery.model.vo.ImageVO;
 import com.nytryx.gallery.model.vo.UserVO;
 import com.nytryx.gallery.service.ImageService;
@@ -24,7 +28,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
 
 import java.util.Date;
 import java.util.List;
@@ -76,17 +79,19 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         }
         // 如果是更新图片则判断图片是否存在
         if (imgId != null) {
-            boolean exists = lambdaQuery()
-                    .eq(Image::getId, imgId)
-                    .exists();
-            ThrowUtils.throwIf(!exists, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+            Image oldImage = getById(imgId);
+            ThrowUtils.throwIf(oldImage == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+            // 判断权限，因为该接口管理员和普通用户都可以调用
+            // 修改图片必须为管理员或者图片创建者
+            ThrowUtils.throwIf(!userService.isAdmin(loginUser)
+                    && !oldImage.getUserId().equals(loginUser.getId()), ErrorCode.NO_AUTH_ERROR);
         }
         // 3.上传图片
         // 根据用户划分目录
         String uploadPathPrefix = String.format(OSS_PUBLIC_STORGE_PRE + "/" +loginUser.getId());
         ImageUploadResult imageUploadResult = fileManager.imageUpload(multipartFile, uploadPathPrefix);
         // 4.构造入库图片信息并操作数据库
-        Image image = getImage(loginUser, imageUploadResult, imgId);
+        Image image = setImageOSSInfo(loginUser, imageUploadResult, imgId);
         boolean result = save(image);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
         return ImageVO.po2Vo(image);
@@ -153,6 +158,12 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         Long userId = imageQueryDTO.getUserId();
         String sortField = imageQueryDTO.getSortField();
         String sortOrder = imageQueryDTO.getSortOrder();
+        // 图片审核字段
+        Long reviewId = imageQueryDTO.getReviewId();
+        String reviewMessage = imageQueryDTO.getReviewMessage();
+        Integer reviewStatus = imageQueryDTO.getReviewStatus();
+        Date reviewTime = imageQueryDTO.getReviewTime();
+
         // 从多字段中搜索
         if (StrUtil.isNotBlank(searchText)) {
             imageQueryWrapper.and(qw -> qw.like("name", searchText)
@@ -169,6 +180,9 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
             imageQueryWrapper.eq(ObjUtil.isNotEmpty(picHeight), "pic_height", picHeight);
             imageQueryWrapper.eq(ObjUtil.isNotEmpty(picSize), "pic_size", picSize);
             imageQueryWrapper.eq(ObjUtil.isNotEmpty(picScale), "pic_scale", picScale);
+            imageQueryWrapper.eq(ObjUtil.isNotEmpty(reviewStatus), "review_status", reviewStatus);
+            imageQueryWrapper.eq(ObjUtil.isNotEmpty(reviewId), "review_id", reviewId);
+            imageQueryWrapper.like(StrUtil.isNotBlank(reviewMessage), "review_message", reviewMessage);
             // json数组查询
             if (CollUtil.isNotEmpty(tags)) {
                 for (String tag : tags) {
@@ -182,8 +196,34 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         return null;
     }
 
+    @Override
+    public void doImageReview(ImageReviewDTO imageReviewDTO, User loginUser) {
+        // 1.校验参数
+        ThrowUtils.throwIf(imageReviewDTO == null, ErrorCode.PARAMS_ERROR);
+        Long imageId = imageReviewDTO.getId();
+        Integer reviewStatus = imageReviewDTO.getReviewStatus();
+        String reviewMessage = imageReviewDTO.getReviewMessage();
+        ImageReviewStatusEnum imageReviewStatusEnum = ImageReviewStatusEnum.getEnumByValue(reviewStatus);
+        ThrowUtils.throwIf(imageId == null || imageReviewStatusEnum == null || reviewMessage == null, ErrorCode.PARAMS_ERROR);
+        // 2.判断图片是否存在
+        Image imageToReview = getById(imageId);
+        ThrowUtils.throwIf(imageToReview == null, ErrorCode.NOT_FOUND_ERROR);
+        // 3.校验审核状态是否重复
+        if (imageToReview.getReviewStatus().equals(reviewStatus)) {
+            // 如果是重复的，说明重复审核，抛出异常
+            throw new BusinessExecption(ErrorCode.PARAMS_ERROR, "重复审核");
+        }
+        // 4.更新数据
+        Image updateImage = new Image();
+        BeanUtil.copyProperties(imageReviewDTO, updateImage);
+        updateImage.setReviewerId(loginUser.getId());
+        updateImage.setUpdateTime(new Date());
+        boolean result = updateById(updateImage);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+    }
+
     @NonNull
-    private Image getImage(User loginUser, ImageUploadResult imageUploadResult, Long imgId) {
+    private Image setImageOSSInfo(User loginUser, ImageUploadResult imageUploadResult, Long imgId) {
         Image image = new Image();
         image.setUrl(imageUploadResult.getUrl());
         image.setName(imageUploadResult.getPicName());
@@ -193,12 +233,31 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         image.setPicScale(imageUploadResult.getPicScale());
         image.setPicFormat(imageUploadResult.getPicFormat());
         image.setUserId(loginUser.getId());
+        // 更新图片审核状态
+        setImageReviewPass(image, loginUser);
         if (imgId != null) {
             // imgId不为空，更新数据，需要补充图片id和编辑时间信息
             image.setId(imgId);
             image.setEditTime(new Date());
         }
         return image;
+    }
+
+    /**
+     * 填充审核参数
+     * @param image 图片对象
+     * @param loginuser 登录用户
+     */
+    public void setImageReviewPass(Image image, User loginuser) {
+        if (userService.isAdmin(loginuser)) {
+            // 管理员则自动过申
+            image.setReviewStatus(ImageReviewStatusEnum.PASS.getValue());
+            image.setReviewerId(loginuser.getId());
+            image.setReviewMessage("管理员自动过审");
+            image.setReviewTime(new Date());
+        }
+        // 非管理员用户， 无论是编辑图片还是新增图片，都设置为待审核状态
+        image.setReviewStatus(ImageReviewStatusEnum.REVIEWING.getValue());
     }
 }
 

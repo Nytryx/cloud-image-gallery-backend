@@ -9,12 +9,10 @@ import com.nytryx.gallery.common.Result;
 import com.nytryx.gallery.constant.UserConstant;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
-import com.nytryx.gallery.model.dto.picture.ImageEditDTO;
-import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
-import com.nytryx.gallery.model.dto.picture.ImageUpdateDTO;
-import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
+import com.nytryx.gallery.model.dto.picture.*;
 import com.nytryx.gallery.model.entity.Image;
 import com.nytryx.gallery.model.entity.User;
+import com.nytryx.gallery.model.enums.ImageReviewStatusEnum;
 import com.nytryx.gallery.model.enums.UserRoleEnum;
 import com.nytryx.gallery.model.vo.ImageTagCategory;
 import com.nytryx.gallery.model.vo.ImageVO;
@@ -52,7 +50,7 @@ public class ImageController {
      * @return 图片前端返回类对象
      */
     @PostMapping("/upload")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+//    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public Result<ImageVO> imageUpload(
             @RequestPart("file") MultipartFile multipartFile,
             ImageUploadDTO imageUploadDTO,
@@ -87,11 +85,12 @@ public class ImageController {
      * 图片更新（管理员）
      * 需要注意 Image 和 ImageUpdateDTO的tags字段存在类型差异，BeanUtil无法处理，需要手动操作
      * @param imageUpdateDTO 图片更新DTO
+     * @param request Http请求对象
      * @return 图片更新是否成功
      */
     @PostMapping("/update")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public Result<Boolean> updateImage(@RequestBody ImageUpdateDTO imageUpdateDTO) {
+    public Result<Boolean> updateImage(@RequestBody ImageUpdateDTO imageUpdateDTO, HttpServletRequest request) {
         ThrowUtils.throwIf(imageUpdateDTO.getId() == null ||imageUpdateDTO.getId() <= 0, ErrorCode.PARAMS_ERROR);
         Image image = new Image();
         BeanUtil.copyProperties(imageUpdateDTO, image);
@@ -102,6 +101,8 @@ public class ImageController {
         long imageId = imageUpdateDTO.getId();
         Image imageToUpdate = imageService.getById(imageId);
         ThrowUtils.throwIf(imageToUpdate == null, ErrorCode.NOT_FOUND_ERROR);
+        // 更新图片审核状态
+        imageService.setImageReviewPass(image, userService.getLoginUser(request));
         // 操作数据库
         boolean result = imageService.updateById(image);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
@@ -158,6 +159,10 @@ public class ImageController {
     public Result<Page<ImageVO>> listImageVOByPage(@RequestBody ImageQueryDTO imageQueryDTO) {
         int current = imageQueryDTO.getCurrent();
         int pageSize = imageQueryDTO.getPageSize();
+        // 限制爬虫
+        ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR);
+        // 普通用户只能查询审核状态为通过的图片
+        imageQueryDTO.setReviewStatus(ImageReviewStatusEnum.PASS.getValue());
         // 查询数据库
         Page<Image> page = imageService.page(new Page<>(current, pageSize), imageService.getQueryWrapper(imageQueryDTO));
         return Result.success(imageService.getImageVOPage(page));
@@ -179,8 +184,10 @@ public class ImageController {
         // 判断更新目标是否存在
         Image imageToEdit = imageService.getById(imageEditDTO.getId());
         ThrowUtils.throwIf(imageToEdit == null, ErrorCode.NOT_FOUND_ERROR);
-        // 仅本人和管理员可编辑
         User loginUser = userService.getLoginUser(request);
+        // 更新图片审核状态
+        imageService.setImageReviewPass(image, loginUser);
+        // 仅本人和管理员可编辑
         boolean canEdit = loginUser.getId().equals(imageToEdit.getUserId())
                 || UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
         ThrowUtils.throwIf(!canEdit, ErrorCode.NO_AUTH_ERROR);
@@ -202,5 +209,21 @@ public class ImageController {
         imageTagCategory.setTagList(tagList);
         imageTagCategory.setCategoryList(categoryList);
         return Result.success(imageTagCategory);
+    }
+
+    /**
+     * 审核图片
+     * @param imageReviewDTO 图片审核DTO
+     * @param request Http请求对象
+     * @return 是否成功
+     */
+    @PostMapping("/review")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<Boolean> doImageReview(@RequestBody ImageReviewDTO imageReviewDTO, HttpServletRequest request) {
+        ThrowUtils.throwIf(imageReviewDTO.getId() <= 0, ErrorCode.PARAMS_ERROR);
+        // 获取当前登录的用户
+        User loginUser = userService.getLoginUser(request);
+        imageService.doImageReview(imageReviewDTO, loginUser);
+        return Result.success(true);
     }
 }
