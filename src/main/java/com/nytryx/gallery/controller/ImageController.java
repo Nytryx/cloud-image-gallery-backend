@@ -60,6 +60,19 @@ public class ImageController {
     }
 
     /**
+     * 图片上传（通过Url）
+     * @param imageUploadDTO 图片上传请求（携带图片id参数或者Url参数）
+     * @param request        Http请求对象
+     * @return 图片前端返回类对象
+     */
+    @PostMapping("/upload/url")
+//    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<ImageVO> imageUploadByUrl(@RequestBody ImageUploadDTO imageUploadDTO, HttpServletRequest request) {
+        String fileUrl = imageUploadDTO.getFileUrl();
+        return Result.success(imageService.imageUpload(fileUrl, imageUploadDTO, userService.getLoginUser(request)));
+    }
+
+    /**
      * 图片删除
      * 图片创建者和管理员都可以删除，因此不做权限校验
      * @param deleteRequest 删除请求对象

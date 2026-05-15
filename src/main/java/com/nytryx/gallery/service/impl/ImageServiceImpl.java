@@ -11,6 +11,9 @@ import com.nytryx.gallery.execption.BusinessExecption;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
 import com.nytryx.gallery.manager.FileManager;
+import com.nytryx.gallery.manager.upload.FileImageUpload;
+import com.nytryx.gallery.manager.upload.ImageUploadTemplate;
+import com.nytryx.gallery.manager.upload.URLImageUpload;
 import com.nytryx.gallery.model.dto.file.ImageUploadResult;
 import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
 import com.nytryx.gallery.model.dto.picture.ImageReviewDTO;
@@ -46,10 +49,13 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
     implements ImageService {
 
     @Resource
-    private FileManager fileManager;
+    private UserService userService;
 
     @Resource
-    private UserService userService;
+    private FileImageUpload fileImageUpload;
+
+    @Resource
+    private URLImageUpload urlImageUpload;
 
     @Override
     public void validImage(Image image) {
@@ -69,7 +75,7 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
     }
 
     @Override
-    public ImageVO imageUpload(MultipartFile multipartFile, ImageUploadDTO imageUploadDTO, User loginUser) {
+    public ImageVO imageUpload(Object fileSource, ImageUploadDTO imageUploadDTO, User loginUser) {
         // 1.参数校验
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
         // 2.判断是新增还是更新
@@ -89,7 +95,12 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         // 3.上传图片
         // 根据用户划分目录
         String uploadPathPrefix = String.format(OSS_PUBLIC_STORGE_PRE + "/" +loginUser.getId());
-        ImageUploadResult imageUploadResult = fileManager.imageUpload(multipartFile, uploadPathPrefix);
+        // 根据fileSource类型使用不同的上传方式
+        ImageUploadTemplate imageUploadTemplate = fileImageUpload;
+        if (fileSource instanceof String) {
+            imageUploadTemplate = urlImageUpload;
+        }
+        ImageUploadResult imageUploadResult = imageUploadTemplate.imageUpload(fileSource, uploadPathPrefix);
         // 4.构造入库图片信息并操作数据库
         Image image = setImageOSSInfo(loginUser, imageUploadResult, imgId);
         boolean result = save(image);

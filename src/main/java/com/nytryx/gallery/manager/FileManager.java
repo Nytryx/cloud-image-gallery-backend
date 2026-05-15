@@ -23,8 +23,13 @@ import java.util.Date;
 
 import static com.nytryx.gallery.constant.FileConstant.*;
 
+/**
+ * 文件服务
+ * @deprecated 已废弃，改为使用upload包的模版方法优化
+ */
 @Slf4j
 @Service
+@Deprecated
 public class FileManager {
 
     @Resource

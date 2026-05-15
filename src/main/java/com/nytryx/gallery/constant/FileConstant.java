@@ -46,4 +46,9 @@ public class FileConstant {
      * OSS公开图片存储路径前缀
      */
     public static final String OSS_PUBLIC_STORGE_PRE = "public";
+
+    /**
+     * 允许通过URL获取的文件类型
+     */
+    public static final List<String> ALLOW_CONTENT_TYPES = Arrays.asList("image/jpeg", "image/jpg", "image/png", "image/webp");
 }
