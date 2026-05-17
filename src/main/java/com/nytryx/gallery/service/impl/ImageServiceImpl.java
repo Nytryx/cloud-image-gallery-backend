@@ -10,13 +10,13 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nytryx.gallery.execption.BusinessExecption;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
-import com.nytryx.gallery.manager.FileManager;
 import com.nytryx.gallery.manager.upload.FileImageUpload;
 import com.nytryx.gallery.manager.upload.ImageUploadTemplate;
 import com.nytryx.gallery.manager.upload.URLImageUpload;
 import com.nytryx.gallery.model.dto.file.ImageUploadResult;
 import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
 import com.nytryx.gallery.model.dto.picture.ImageReviewDTO;
+import com.nytryx.gallery.model.dto.picture.ImageUploadByBatchDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
 import com.nytryx.gallery.model.entity.Image;
 import com.nytryx.gallery.model.entity.User;
@@ -26,24 +26,30 @@ import com.nytryx.gallery.model.vo.UserVO;
 import com.nytryx.gallery.service.ImageService;
 import com.nytryx.gallery.mapper.ImageMapper;
 import com.nytryx.gallery.service.UserService;
+import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 
+import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.nytryx.gallery.constant.FileConstant.OSS_PUBLIC_STORGE_PRE;
+import static com.nytryx.gallery.constant.FileConstant.*;
 
 /**
  * 图片服务接口实现类
  * @author zhent 
  */
+@Slf4j
 @Service
 public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
     implements ImageService {
@@ -102,7 +108,12 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         }
         ImageUploadResult imageUploadResult = imageUploadTemplate.imageUpload(fileSource, uploadPathPrefix);
         // 4.构造入库图片信息并操作数据库
-        Image image = setImageOSSInfo(loginUser, imageUploadResult, imgId);
+        // 确认图片名称
+        String imgName = imageUploadResult.getPicName();
+        if (imageUploadDTO != null && StrUtil.isNotBlank(imageUploadDTO.getImgName())) {
+            imgName = imageUploadDTO.getImgName();
+        }
+        Image image = setImageOSSInfo(loginUser, imageUploadResult, imgName, imgId);
         boolean result = save(image);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
         return ImageVO.po2Vo(image);
@@ -234,10 +245,10 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
     }
 
     @NonNull
-    private Image setImageOSSInfo(User loginUser, ImageUploadResult imageUploadResult, Long imgId) {
+    private Image setImageOSSInfo(User loginUser, ImageUploadResult imageUploadResult, String imgName, Long imgId) {
         Image image = new Image();
         image.setUrl(imageUploadResult.getUrl());
-        image.setName(imageUploadResult.getPicName());
+        image.setName(imgName);
         image.setPicSize(imageUploadResult.getPicSize());
         image.setPicWidth(imageUploadResult.getPicWidth());
         image.setPicHeight(imageUploadResult.getPicHeight());
@@ -270,6 +281,66 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
         // 非管理员用户， 无论是编辑图片还是新增图片，都设置为待审核状态
         image.setReviewStatus(ImageReviewStatusEnum.REVIEWING.getValue());
     }
+
+    @Override
+    public Integer imageUploadByBatch(ImageUploadByBatchDTO imageUploadByBatchDTO, User loginUser) {
+        // 校验参数
+        String searchText = imageUploadByBatchDTO.getSearchText();
+        Integer count = imageUploadByBatchDTO.getCount();
+        ThrowUtils.throwIf(count > 30, ErrorCode.PARAMS_ERROR, "不能超过30条");
+        String namePrefix = imageUploadByBatchDTO.getNamePrefix();
+        if (StrUtil.isBlank(namePrefix)) {
+            // 名称前缀默认等于搜索关键词
+            namePrefix = searchText;
+        }
+        // 抓取内容
+        String fetchUrl = String.format("https://cn.bing.com/images/async?q=%s&mmasync=1", searchText);
+        Document document;
+        try {
+            document = Jsoup.connect(fetchUrl).get();
+        } catch (IOException e) {
+            log.error("通过url获取图片失败", e);
+            throw new BusinessExecption(ErrorCode.OPERATION_ERROR, "获取数据失败");
+        }
+        // 解析内容
+        Element div = document.getElementsByClass(FETCH_IMAGES_ELEMENT_FIRST_CLASS_NAME).first();
+        if (ObjUtil.isEmpty(div)) {
+            log.error("获取图片元素失败");
+            throw new BusinessExecption(ErrorCode.OPERATION_ERROR, "获取图片失败");
+        }
+        Elements imgElementList = div.select(FETCH_IMAGES_ELEMENT_SECOND_CLASS_NAME);
+        // 遍历元素，一次上传图片
+        int uploadCount = 0;
+        for (Element imgElement : imgElementList) {
+            String fileUrl = imgElement.attr("src");
+            if (StrUtil.isBlank(fileUrl)) {
+                log.info("当前链接为空，已跳过：{}", imgElement);
+                continue;
+            }
+            // 处理图片地址，防止转义或者与对象存储相关的问题
+            int questionMarkIndex = fileUrl.indexOf("?");
+            if (questionMarkIndex > -1) {
+                fileUrl = fileUrl.substring(0, questionMarkIndex);
+            }
+            // 上传图片
+            ImageUploadDTO imageUploadDTO = new ImageUploadDTO();
+            imageUploadDTO.setFileUrl(fileUrl);
+            imageUploadDTO.setImgName(namePrefix + (uploadCount + 1));
+            try {
+                ImageVO imageVO = imageUpload(fileUrl, imageUploadDTO, loginUser);
+                log.info("图片上传成功，id = {}", imageVO.getId());
+                uploadCount++;
+            } catch (Exception e) {
+                log.error("图片上传失败", e);
+                continue;
+            }
+            if (uploadCount >= count) {
+                break;
+            }
+        }
+        return uploadCount;
+    }
+
 }
 
 

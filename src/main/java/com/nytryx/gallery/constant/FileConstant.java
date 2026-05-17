@@ -18,6 +18,11 @@ public class FileConstant {
     public static final String OSS_GET_INFO_SIGN = "?x-oss-process=image/info";
 
     /**
+     * OSS设置获取图片压缩签名
+     */
+    public static final String OSS_GET_FORMAT_SIGN = "?x-oss-process=image/resize,w_1200/quality,q_80/format,webp";
+
+    /**
      * OSS返回的图片高度信息字段对象名
      */
     public static final String OSS_IMAGE_INFO_HEIGHT = "ImageHeight";
@@ -51,4 +56,14 @@ public class FileConstant {
      * 允许通过URL获取的文件类型
      */
     public static final List<String> ALLOW_CONTENT_TYPES = Arrays.asList("image/jpeg", "image/jpg", "image/png", "image/webp");
+
+    /**
+     * 抓取图片并解析时，图片元素的类名
+     */
+    public static final String FETCH_IMAGES_ELEMENT_FIRST_CLASS_NAME = "dgControl";
+
+    /**
+     * 抓取图片并解析时，图片元素的第二层类名
+     */
+    public static final String FETCH_IMAGES_ELEMENT_SECOND_CLASS_NAME = "img.mimg";
 }

@@ -3,6 +3,8 @@ package com.nytryx.gallery.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.nytryx.gallery.annotation.AuthCheck;
 import com.nytryx.gallery.common.DeleteRequest;
 import com.nytryx.gallery.common.Result;
@@ -18,14 +20,19 @@ import com.nytryx.gallery.model.vo.ImageTagCategory;
 import com.nytryx.gallery.model.vo.ImageVO;
 import com.nytryx.gallery.service.ImageService;
 import com.nytryx.gallery.service.UserService;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static com.nytryx.gallery.constant.CacheConstant.REDIS_EXPIRE_TIME;
+import static com.nytryx.gallery.constant.CacheConstant.REDIS_PROJ_NAME;
 
 /**
  * 图片接口
@@ -41,6 +48,16 @@ public class ImageController {
 
     @Resource
     private ImageService imageService;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    private final Cache<String, String> LOCAL_CACHE =
+            Caffeine.newBuilder().initialCapacity(1024)
+                    .maximumSize(10000L)
+                    // 缓存 5 分钟移除
+                    .expireAfterWrite(5L, TimeUnit.MINUTES)
+                    .build();
 
     /**
      * 图片上传
@@ -182,6 +199,51 @@ public class ImageController {
     }
 
     /**
+     * 分页获取图片（使用缓存）
+     * @param imageQueryDTO 图片查询DTO
+     * @return 图片VO分页
+     */
+    @PostMapping("/list/page/vo/cache")
+    public Result<Page<ImageVO>> listImageVOByPageWithCache(@RequestBody ImageQueryDTO imageQueryDTO) {
+        int current = imageQueryDTO.getCurrent();
+        int pageSize = imageQueryDTO.getPageSize();
+        // 限制爬虫
+        ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR);
+        // 普通用户只能查询审核状态为通过的图片
+        imageQueryDTO.setReviewStatus(ImageReviewStatusEnum.PASS.getValue());
+        // 查询数据库之前先查询数据库
+        // 构建缓存key
+        String queryCondition = JSONUtil.toJsonStr(imageQueryDTO);
+        String queryConditionKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
+        String cacheKey = String.format(REDIS_PROJ_NAME + ":listImageVOByPage:%s", queryConditionKey);
+        // 查询缓存
+        // 1.先查本地缓存
+        String cachedValue = LOCAL_CACHE.getIfPresent(cacheKey);
+        if (cachedValue != null) {
+            // 本地缓存存在，直接返回
+            Page<ImageVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
+            return Result.success(cachedPage);
+        }
+        // 2.本地缓存未命中，查询分布式缓存redis
+        cachedValue = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cachedValue != null) {
+            // 分布式缓存成功命中，更新本地缓存后返回结果
+            LOCAL_CACHE.put(cacheKey, cachedValue);
+            Page<ImageVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
+            return Result.success(cachedPage);
+        }
+        // 3.分布式缓存也为命中，查询数据库
+        Page<Image> page = imageService.page(new Page<>(current, pageSize), imageService.getQueryWrapper(imageQueryDTO));
+        Page<ImageVO> imageVOPage = imageService.getImageVOPage(page);
+        String valueToCache = JSONUtil.toJsonStr(imageVOPage);
+        // 更新本地缓存
+        LOCAL_CACHE.put(cacheKey, valueToCache);
+        // 更新分布式缓存，并设置缓存的过期时间，5 - 10分钟（避免缓存雪崩）
+        stringRedisTemplate.opsForValue().set(cacheKey, valueToCache, REDIS_EXPIRE_TIME, TimeUnit.SECONDS);
+        return Result.success(imageVOPage);
+    }
+
+    /**
      * 编辑图片
      * @param imageEditDTO 编辑图片DTO
      * @param request Http请求对象
@@ -238,5 +300,20 @@ public class ImageController {
         User loginUser = userService.getLoginUser(request);
         imageService.doImageReview(imageReviewDTO, loginUser);
         return Result.success(true);
+    }
+
+    /**
+     * 批量上传图片
+     * @param imageUploadByBatchDTO 图片批量上传请求对象
+     * @param request Http请求对象
+     * @return 是否成功
+     */
+    @PostMapping("/upload/batch")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public Result<Integer> imageUploadByBatch(@RequestBody ImageUploadByBatchDTO imageUploadByBatchDTO, HttpServletRequest request) {
+        // 获取当前登录的用户
+        User loginUser = userService.getLoginUser(request);
+        Integer uploadCount = imageService.imageUploadByBatch(imageUploadByBatchDTO, loginUser);
+        return Result.success(uploadCount);
     }
 }

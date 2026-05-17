@@ -1,6 +1,7 @@
 package com.nytryx.gallery.manager.upload;
 
 import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.io.FileTypeUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.RandomUtil;
@@ -15,16 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Date;
 
-import static com.nytryx.gallery.constant.FileConstant.OSS_GET_INFO_SIGN;
-import static com.nytryx.gallery.constant.FileConstant.OSS_IMAGE_INFO_FORMAT;
-import static com.nytryx.gallery.constant.FileConstant.OSS_IMAGE_INFO_HEIGHT;
-import static com.nytryx.gallery.constant.FileConstant.OSS_IMAGE_INFO_OBJ_KEY;
-import static com.nytryx.gallery.constant.FileConstant.OSS_IMAGE_INFO_SIZE;
-import static com.nytryx.gallery.constant.FileConstant.OSS_IMAGE_INFO_WIDTH;
+import static com.nytryx.gallery.constant.FileConstant.*;
 
 @Slf4j
 @Component
@@ -45,17 +42,24 @@ public abstract class ImageUploadTemplate {
     public ImageUploadResult imageUpload(Object source, String uploadPathPrefix) {
         // 校验图片
         validateImg(source);
-        // 自定义图片上传地址构造
-        String uuid = RandomUtil.randomString(16);
-        String originalFilename = getOriginalFilename(source);
-        String uploadFileName = String.format("%s_%s.%s",
-                DateUtil.formatDate(new Date()),
-                uuid,
-                FileUtil.getSuffix(originalFilename));
-        String uploadFilePath = String.format("%s/%s", uploadPathPrefix, uploadFileName);
-        try {
-            // 获取文件的输入流
-            InputStream inputStream = getResourceInputStream(source);
+        try (
+                InputStream rawInputStream = getResourceInputStream(source);
+                BufferedInputStream inputStream = new BufferedInputStream(rawInputStream)
+        ) {
+            inputStream.mark(Integer.MAX_VALUE);
+            String suffix = FileTypeUtil.getType(inputStream);
+            inputStream.reset();
+            String uuid = RandomUtil.randomString(16);
+            String originalFilename = getOriginalFilename(source);
+            // OSS中存储的实际路径
+            String uploadFileName = String.format(
+                    "%s_%s.%s",
+                    DateUtil.formatDate(new Date()),
+                    uuid,
+                    suffix
+            );
+
+            String uploadFilePath = String.format("%s/%s", uploadPathPrefix, uploadFileName);
             return buildResult(uploadFilePath, inputStream, originalFilename);
         } catch (Exception e) {
             log.error("上传图片失败: {}", e.getMessage());
@@ -104,7 +108,8 @@ public abstract class ImageUploadTemplate {
         double imageScale = NumberUtil.round(imageWidth * 1.0 / imageHeight, 2).doubleValue();
 
         ImageUploadResult imageUploadResult = new ImageUploadResult();
-        imageUploadResult.setUrl(url);
+        // 存储数据库时，在URL后添加压缩参数，这样获取到的图片为压缩后的webp
+        imageUploadResult.setUrl(url + OSS_GET_FORMAT_SIGN);
         imageUploadResult.setPicName(FileUtil.mainName(originalFilename));
         imageUploadResult.setPicSize(imageSize);
         imageUploadResult.setPicWidth(imageWidth);

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.nytryx.gallery.model.dto.picture.ImageQueryDTO;
 import com.nytryx.gallery.model.dto.picture.ImageReviewDTO;
+import com.nytryx.gallery.model.dto.picture.ImageUploadByBatchDTO;
 import com.nytryx.gallery.model.dto.picture.ImageUploadDTO;
 import com.nytryx.gallery.model.entity.Image;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -68,4 +69,13 @@ public interface ImageService extends IService<Image> {
      * @param loginuser 登录用户
      */
     void setImageReviewPass(Image image, User loginuser);
+
+    /**
+     * 批量抓取和创建图片
+     *
+     * @param imageUploadByBatchDTO 批量抓取请求类
+     * @param loginUser             登录用户
+     * @return 抓取数量
+     */
+    Integer imageUploadByBatch(ImageUploadByBatchDTO imageUploadByBatchDTO, User loginUser);
 }
