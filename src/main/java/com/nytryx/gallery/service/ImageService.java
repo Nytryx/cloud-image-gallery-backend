@@ -78,4 +78,10 @@ public interface ImageService extends IService<Image> {
      * @return 抓取数量
      */
     Integer imageUploadByBatch(ImageUploadByBatchDTO imageUploadByBatchDTO, User loginUser);
+
+    /**
+     * 删除图片文件
+     * @param oldImage 图片对象
+     */
+    void deleteImageFile(Image oldImage);
 }

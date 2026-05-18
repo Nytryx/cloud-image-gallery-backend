@@ -1,5 +1,6 @@
 package com.nytryx.gallery.manager;
 
+import cn.hutool.core.util.StrUtil;
 import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSException;
@@ -61,5 +62,14 @@ public class OSSManager {
             log.error("下载时OSS客户端异常, message: {}", ce.getMessage());
             throw new BusinessExecption(ErrorCode.OPERATION_ERROR, "OSS服务异常，对象下载失败");
         }
+    }
+
+    /**
+     * 删除对象
+     * @param key 对象路径 + 名称
+     */
+    public void delete(String key) {
+        String deleteKey = StrUtil.removePrefix(key, "https://" + ossClientConfig.getBucket() + "." + ossClientConfig.getEndpoint() + "/");
+        ossClient.deleteObject(ossClientConfig.getBucket(), deleteKey);
     }
 }

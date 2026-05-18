@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nytryx.gallery.execption.BusinessExecption;
 import com.nytryx.gallery.execption.ErrorCode;
 import com.nytryx.gallery.execption.ThrowUtils;
+import com.nytryx.gallery.manager.OSSManager;
 import com.nytryx.gallery.manager.upload.FileImageUpload;
 import com.nytryx.gallery.manager.upload.ImageUploadTemplate;
 import com.nytryx.gallery.manager.upload.URLImageUpload;
@@ -31,7 +32,9 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.NonNull;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -62,6 +65,8 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
 
     @Resource
     private URLImageUpload urlImageUpload;
+    @Autowired
+    private OSSManager oSSManager;
 
     @Override
     public void validImage(Image image) {
@@ -339,6 +344,22 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image>
             }
         }
         return uploadCount;
+    }
+
+    @Override
+    @Async // 标记为异步执行
+    public void deleteImageFile(Image image) {
+        // 判断图片是否被多条记录使用
+        String url = image.getUrl();
+        long count = lambdaQuery()
+                .eq(Image::getUrl, url)
+                .count();
+        if (count > 1) {
+            // 不止一条记录使用了该图片，则不做清理
+            return;
+        }
+        // 删除图片
+        oSSManager.delete(url);
     }
 
 }

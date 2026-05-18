@@ -106,8 +106,10 @@ public class ImageController {
         ThrowUtils.throwIf(!loginUser.getId().equals(image.getUserId()) &&
                 !UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole()),
                 ErrorCode.NO_AUTH_ERROR);
-        boolean result = imageService.removeById(deleteRequest);
+        boolean result = imageService.removeById(deleteRequest.getId());
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片删除失败");
+        // 清理OSS中的图片资源
+        imageService.deleteImageFile(image);
         return Result.success(true);
     }
 

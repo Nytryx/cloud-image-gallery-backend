@@ -109,7 +109,7 @@ public abstract class ImageUploadTemplate {
 
         ImageUploadResult imageUploadResult = new ImageUploadResult();
         // 存储数据库时，在URL后添加压缩参数，这样获取到的图片为压缩后的webp
-        imageUploadResult.setUrl(url + OSS_GET_FORMAT_SIGN);
+        imageUploadResult.setUrl(url);
         imageUploadResult.setPicName(FileUtil.mainName(originalFilename));
         imageUploadResult.setPicSize(imageSize);
         imageUploadResult.setPicWidth(imageWidth);
